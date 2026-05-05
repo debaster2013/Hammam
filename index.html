@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Битва Хаммамов</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --panel-bg: #1e1e1e;
+            --text-color: #e0e0e0;
+            --accent: #bb86fc;
+            --admin-accent: #cf6679;
+            --success: #03dac6;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 600px;
+        }
+        .panel {
+            background-color: var(--panel-bg);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        h1, h2 { text-align: center; color: var(--accent); }
+        input, button {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: none;
+            box-sizing: border-box;
+        }
+        input { background-color: #333; color: white; }
+        button {
+            background-color: var(--accent);
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        button:hover { opacity: 0.8; }
+        button:disabled { background-color: #555; cursor: not-allowed; }
+        
+        #admin-panel { display: none; border: 2px solid var(--admin-accent); }
+        #admin-panel h2 { color: var(--admin-accent); }
+        #game-screen { display: none; }
+        
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .stat-box { background-color: #333; padding: 10px; border-radius: 5px; text-align: center; }
+        .log {
+            background: #000; padding: 10px; border-radius: 5px;
+            font-family: monospace; height: 100px; overflow-y: auto; color: var(--success);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- Экран авторизации -->
+    <div id="auth-screen" class="panel">
+        <h1>Битва Хаммамов</h1>
+        <p style="text-align: center;">Вход в систему</p>
+        <input type="text" id="display-name" placeholder="Твой ник (например: Иван Русский)">
+        <input type="text" id="username" placeholder="Твой юзернейм (например: @player1)">
+        <button onclick="login()">Войти через Google / Email</button>
+    </div>
+
+    <!-- Игровой экран -->
+    <div id="game-screen">
+        <div class="panel">
+            <h2 id="player-title">Профиль</h2>
+            <div class="stat-grid">
+                <div class="stat-box">Уровень: <span id="stat-level">0</span></div>
+                <div class="stat-box">Марблы: <span id="stat-marbles">1</span></div>
+                <div class="stat-box" style="grid-column: span 2;">Возможности: <span id="stat-caps">0</span></div>
+            </div>
+            <button id="lvl-up-btn" onclick="levelUp()">Прокачать уровень (Нужно: 1 марбл)</button>
+        </div>
+
+        <div class="panel">
+            <h2>PvP Арена</h2>
+            <p>Введи юзернейм противника (для теста: @noob (ур.0), @pro (ур.5), @boss (ур.10))</p>
+            <input type="text" id="enemy-username" placeholder="@username противника">
+            <button id="pvp-btn" onclick="startPvP()">Атаковать!</button>
+            <p id="cooldown-timer" style="text-align: center; color: var(--admin-accent);"></p>
+            <div class="log" id="battle-log">Лог битвы...</div>
+        </div>
+
+        <!-- Админ Панель (только для @DeBaster2013) -->
+        <div id="admin-panel" class="panel">
+            <h2>Админ Панель</h2>
+            <input type="text" id="target-user" placeholder="Юзернейм игрока">
+            <input type="number" id="give-marbles" placeholder="Количество марблов">
+            <input type="number" id="give-caps" placeholder="Количество возможностей">
+            <button style="background-color: var(--admin-accent); color: white;" onclick="adminGive()">Выдать ресурсы</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Состояние текущего игрока
+    let player = {
+        displayName: '',
+        username: '',
+        level: 0,
+        marbles: 1,
+        capabilities: 0,
+        lastBattleTime: 0 
+    };
+
+    // Фейковая база данных других игроков для симуляции PvP
+    const mockDatabase = {
+        '@noob': { level: 0 },
+        '@pro': { level: 5 },
+        '@boss': { level: 10 }
+    };
+
+    function updateUI() {
+        document.getElementById('stat-level').innerText = player.level;
+        document.getElementById('stat-marbles').innerText = player.marbles;
+        document.getElementById('stat-caps').innerText = player.capabilities;
+        
+        let cost = player.level + 1;
+        let lvlBtn = document.getElementById('lvl-up-btn');
+        lvlBtn.innerText = `Прокачать уровень (Нужно: ${cost} марбл.)`;
+        lvlBtn.disabled = player.marbles < cost;
+    }
+
+    function logMessage(msg) {
+        const logBox = document.getElementById('battle-log');
+        logBox.innerHTML += `<div>> ${msg}</div>`;
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function login() {
+        const dName = document.getElementById('display-name').value;
+        let uName = document.getElementById('username').value;
+
+        if (!dName || !uName) {
+            alert("Заполни все поля!");
+            return;
+        }
+        if (!uName.startsWith('@')) uName = '@' + uName;
+
+        player.displayName = dName;
+        player.username = uName;
+
+        document.getElementById('auth-screen').style.display = 'none';
+        document.getElementById('game-screen').style.display = 'block';
+        document.getElementById('player-title').innerText = `${player.displayName} (${player.username})`;
+
+        // Проверка на админа
+        if (player.username === '@DeBaster2013') {
+            document.getElementById('admin-panel').style.display = 'block';
+            logMessage("Доступ администратора активирован.");
+        }
+
+        updateUI();
+        setInterval(checkCooldown, 1000); // Запускаем таймер кулдауна
+    }
+
+    function levelUp() {
+        let cost = player.level + 1;
+        if (player.marbles >= cost) {
+            player.marbles -= cost;
+            player.level += 1;
+            // При повышении уровня можно давать "возможности", здесь добавил +10 для примера
+            player.capabilities += 10; 
+            updateUI();
+            logMessage(`Уровень повышен до ${player.level}!`);
+        }
+    }
+
+    function startPvP() {
+        let enemyName = document.getElementById('enemy-username').value;
+        if (!enemyName.startsWith('@')) enemyName = '@' + enemyName;
+
+        if (player.username === enemyName) {
+            logMessage("Нельзя атаковать самого себя!");
+            return;
+        }
+
+        // Кулдаун 1 час (3600000 мс)
+        const now = Date.now();
+        if (now - player.lastBattleTime < 3600000) {
+            logMessage("Кулдаун! Жди.");
+            return;
+        }
+
+        // Ищем врага в базе
+        let enemy = mockDatabase[enemyName];
+        if (!enemy) {
+            logMessage("Игрок не найден! (Используй @noob, @pro или @boss)");
+            return;
+        }
+
+        // Математика шансов
+        let baseChance = 50;
+        let levelDiff = player.level - enemy.level;
+        let winChance = baseChance + (levelDiff * 10);
+
+        // Ограничиваем шансы, чтобы всегда был хотя бы 1% на победу или поражение
+        if (winChance > 99) winChance = 99;
+        if (winChance < 1) winChance = 1;
+
+        logMessage(`Атакуем ${enemyName} (Ур. ${enemy.level}). Шанс победы: ${winChance}%`);
+
+        // Рандом от 1 до 100
+        let roll = Math.floor(Math.random() * 100) + 1;
+        
+        if (roll <= winChance) {
+            logMessage(`ПОБЕДА! Выпало ${roll} <= ${winChance}. Получен 1 марбл!`);
+            player.marbles += 1;
+        } else {
+            logMessage(`ПОРАЖЕНИЕ. Выпало ${roll} > ${winChance}.`);
+        }
+
+        player.lastBattleTime = Date.now();
+        updateUI();
+    }
+
+    function checkCooldown() {
+        const btn = document.getElementById('pvp-btn');
+        const timerText = document.getElementById('cooldown-timer');
+        const now = Date.now();
+        const timeLeft = 3600000 - (now - player.lastBattleTime);
+
+        if (player.lastBattleTime === 0 || timeLeft <= 0) {
+            btn.disabled = false;
+            timerText.innerText = "";
+        } else {
+            btn.disabled = true;
+            let minutes = Math.floor((timeLeft / 1000) / 60);
+            let seconds = Math.floor((timeLeft / 1000) % 60);
+            timerText.innerText = `До следующей битвы: ${minutes}м ${seconds}с`;
+        }
+    }
+
+    function adminGive() {
+        let target = document.getElementById('target-user').value;
+        let addMarbles = parseInt(document.getElementById('give-marbles').value) || 0;
+        let addCaps = parseInt(document.getElementById('give-caps').value) || 0;
+
+        if (target === player.username) {
+            player.marbles += addMarbles;
+            player.capabilities += addCaps;
+            updateUI();
+            logMessage(`Админ: выдано себе ${addMarbles} марблов и ${addCaps} возможностей.`);
+        } else {
+            logMessage(`Админ: игроку ${target} отправлено ${addMarbles} марблов. (Симуляция)`);
+        }
+    }
+</script>
+</body>
+</html>
